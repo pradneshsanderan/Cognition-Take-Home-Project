@@ -1,9 +1,11 @@
-import { notFound } from "next/navigation";
+import { forbidden, notFound } from "next/navigation";
 import { DataTable } from "@/components/DataTable";
 import { Filters } from "@/components/Filters";
 import { Pagination } from "@/components/Pagination";
 import { fetchList } from "@/lib/query";
-import { fieldsOf, findApp } from "@/lib/registry";
+import { fieldsOf, findApp } from "@/lib/apps";
+import { currentActor } from "@/lib/identity";
+import { canView } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +14,7 @@ export default async function ListPage({ params, searchParams }: PageProps<"/[ap
   const { app: slug } = await params;
   const app = findApp(slug);
   if (!app) notFound();
+  if (!canView(await currentActor(), app.config)) forbidden();
 
   const query = await searchParams;
   const { config } = app;

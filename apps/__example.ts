@@ -23,6 +23,11 @@ export default defineApp({
     defaultSort: { field: "createdAt", dir: "desc" },
     pageSize: 25,
   },
+  permissions: {
+    view: ["support", "finance"],
+    approve: ["finance"],
+    reject: ["finance"],
+  },
   actions: [
     {
       name: "approve",

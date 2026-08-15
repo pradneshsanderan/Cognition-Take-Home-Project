@@ -107,6 +107,8 @@ function validate(slug: string, config: AppConfig): AppConfig {
     throw new AppConfigError(slug, "list.pageSize must be at least 1");
   }
 
+  const actionNames = new Set((config.actions ?? []).map((action) => action.name));
+
   for (const action of config.actions ?? []) {
     const keys = Object.keys(action.effect.set);
     if (keys.length === 0) {
@@ -125,6 +127,44 @@ function validate(slug: string, config: AppConfig): AppConfig {
           `action "${action.name}" sets "${name}" to "${value}", which is not one of its options: ${field.options!.join(", ")}`,
         );
       }
+    }
+    if (action.makerChecker?.over) {
+      const { field: name } = action.makerChecker.over;
+      requireConfigField(name, `action "${action.name}" makerChecker.over.field`);
+      const field = configFields.get(name)!;
+      if (field.type !== "money" && field.type !== "number") {
+        throw new AppConfigError(
+          slug,
+          `action "${action.name}" declares makerChecker over "${name}", which is of type "${field.type}" and not numeric`,
+        );
+      }
+    }
+  }
+
+  if (!config.permissions || !Array.isArray(config.permissions.view)) {
+    throw new AppConfigError(
+      slug,
+      "permissions.view is required and must be an array of roles",
+    );
+  }
+  if (config.permissions.view.length === 0) {
+    throw new AppConfigError(slug, "permissions.view must list at least one role");
+  }
+  for (const [key, roles] of Object.entries(config.permissions)) {
+    if (key === "view") continue;
+    if (!actionNames.has(key)) {
+      throw new AppConfigError(
+        slug,
+        `permissions grants "${key}", which is not a declared action. Declared actions: ${
+          [...actionNames].join(", ") || "(none)"
+        }`,
+      );
+    }
+    if (!Array.isArray(roles) || roles.length === 0) {
+      throw new AppConfigError(
+        slug,
+        `permissions.${key} must list at least one role`,
+      );
     }
   }
 
