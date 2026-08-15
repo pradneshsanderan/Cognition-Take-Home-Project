@@ -4,7 +4,6 @@ export default defineApp({
   name: "Feature Flags",
   resource: "featureFlag",
   fields: [
-    { name: "id", label: "ID", type: "string", readOnly: true },
     { name: "key", label: "Key", type: "string" },
     { name: "description", label: "Description", type: "text" },
     {
@@ -19,7 +18,7 @@ export default defineApp({
   ],
   list: {
     columns: ["key", "environment", "enabled", "rollout", "updatedAt"],
-    filters: ["environment", "enabled", "key"],
+    filters: ["environment", "enabled"],
     defaultSort: { field: "key", dir: "asc" },
     pageSize: 25,
   },
@@ -33,13 +32,11 @@ export default defineApp({
       name: "enable",
       label: "Enable",
       effect: { set: { enabled: true } },
-      confirm: "Enable this flag?",
     },
     {
       name: "disable",
       label: "Disable",
       effect: { set: { enabled: false } },
-      confirm: "Disable this flag?",
     },
   ],
 });
