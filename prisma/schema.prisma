@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id    String   @id @default(cuid())
+  email String   @unique
+  name  String
+  roles String[]
+}
+
+model Refund {
+  id            String   @id @default(cuid())
+  customerName  String
+  customerEmail String
+  amountPence   Int
+  reason        String
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+}
+
+model KycCase {
+  id            String   @id @default(cuid())
+  applicantName String
+  country       String
+  riskLevel     String
+  documentType  String
+  status        String   @default("pending")
+  submittedAt   DateTime @default(now())
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String
+  environment String
+  enabled     Boolean  @default(false)
+  rollout     Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}

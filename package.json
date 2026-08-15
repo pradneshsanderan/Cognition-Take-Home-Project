@@ -1,0 +1,36 @@
+{
+  "name": "internal-tools-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "sync-apps": "tsx scripts/sync-apps.ts",
+    "predev": "npm run sync-apps",
+    "dev": "next dev",
+    "prebuild": "npm run sync-apps",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.1",
+    "prisma": "6.19.3",
+    "tailwindcss": "^4",
+    "tsx": "4.23.12",
+    "typescript": "^5"
+  }
+}
