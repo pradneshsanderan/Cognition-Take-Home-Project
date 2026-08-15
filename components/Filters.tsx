@@ -63,7 +63,10 @@ export function Filters({
   const hasActiveFilter = fields.some((field) => values[field.name] !== "");
 
   return (
+    // Keyed on the active filter values so React remounts the uncontrolled
+    // controls instead of keeping stale ones across a soft navigation.
     <form
+      key={fields.map((field) => `${field.name}=${values[field.name] ?? ""}`).join("&")}
       action={`/${slug}`}
       method="get"
       className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-white p-4"
