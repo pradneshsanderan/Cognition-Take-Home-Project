@@ -2,10 +2,10 @@
 
 An internal tool here is a config file, not a codebase: one generic set of routes and
 components renders every app, so adding a tool means adding exactly one file under `apps/`.
-Three worked examples ship with it — a refunds dashboard, a KYC review queue and a feature
-flag console — each of which is a single file with fields, columns, filters, roles and
-actions and no bespoke code. It was built to test whether a team could replace Microsoft
-Power Apps with tooling they own.
+Four worked examples ship with it — a refunds dashboard, a KYC review queue, a chargeback
+disputes queue and a feature flag console — each of which is a single file with fields,
+columns, filters, roles and actions and no bespoke code. It was built to test whether a team
+could replace Microsoft Power Apps with tooling they own.
 
 ## Running it
 
@@ -26,7 +26,7 @@ both to the same URL.
 ```bash
 npm install
 npx prisma migrate deploy   # or: npx prisma migrate dev
-npx prisma db seed          # idempotent: 4 users, 200 refunds, 120 KYC cases, 15 flags
+npx prisma db seed          # idempotent: 4 users, 200 refunds, 120 KYC cases, 80 disputes, 15 flags
 npm run dev                 # http://localhost:3000
 npm test                    # unit tests
 npm run lint
@@ -78,7 +78,8 @@ The model must already exist in `prisma/schema.prisma`. Every config is validate
 the Prisma datamodel on first use, so an unknown resource, an unknown field, a field type
 that disagrees with the Prisma scalar or an action setting an impossible enum value throws
 an error naming the offending file instead of rendering an empty table.
-`apps/refunds.ts`, `apps/kyc.ts` and `apps/flags.ts` are the worked examples.
+`apps/refunds.ts`, `apps/kyc.ts`, `apps/disputes.ts` and `apps/flags.ts` are the worked
+examples.
 
 ## Architecture
 

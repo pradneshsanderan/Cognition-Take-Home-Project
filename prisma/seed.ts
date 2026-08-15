@@ -57,6 +57,32 @@ const KYC_STATUSES = [
 ] as const;
 const ENVIRONMENTS = ["dev", "staging", "prod"] as const;
 
+const MERCHANTS = [
+  "Northwind Coffee", "Bramble & Co", "Halcyon Fitness", "Tidewater Books",
+  "Volt Electronics", "Saffron Kitchen", "Meridian Travel", "Copperleaf Garden",
+  "Orbit Telecom", "Larkspur Pharmacy", "Ironclad Tools", "Marlowe Tailoring",
+  "Juniper Pet Care", "Stonegate Hotels", "Bluepeak Outdoors", "Cadence Music",
+];
+
+const CARD_NETWORKS = ["visa", "mastercard", "amex", "discover"] as const;
+
+// Real dispute reason codes, keyed by the network that issues them.
+const REASON_CODES: Record<(typeof CARD_NETWORKS)[number], readonly string[]> = {
+  visa: ["10.4", "12.6", "13.1", "13.3", "13.7"],
+  mastercard: ["4837", "4853", "4855", "4863"],
+  amex: ["C08", "C14", "F24", "F29", "P05"],
+  discover: ["6005", "7030", "4534", "AL"],
+};
+
+// Every value here is declared by apps/disputes.ts; the 3/2/2/1 weighting keeps
+// all four represented in the seeded data.
+const DISPUTE_STATUSES = [
+  "open", "open", "open",
+  "evidence_submitted", "evidence_submitted",
+  "won", "won",
+  "lost",
+] as const;
+
 function personName(index: number): string {
   return `${FIRST_NAMES[index % FIRST_NAMES.length]} ${
     LAST_NAMES[(index * 7) % LAST_NAMES.length]
@@ -181,6 +207,88 @@ async function seedKycCases(target: number) {
   return { created: rows.length, existing, updated: await reconcileKycStatuses() };
 }
 
+// Same idea as the KYC queue: each block of eight consecutive disputes gets its
+// own shuffle of DISPUTE_STATUSES, so the totals stay exact (30 open, 20
+// evidence_submitted, 20 won, 10 lost across 80 rows) while the status column
+// reads as unordered rather than as a repeating run. Blocks are counted in the
+// app's default sort order — openedAt ascending — which is the order the pattern
+// would be visible in.
+const disputeStatusBlocks = new Map<number, readonly string[]>();
+
+function disputeStatusBlock(block: number): readonly string[] {
+  const cached = disputeStatusBlocks.get(block);
+  if (cached) return cached;
+
+  const values = [...DISPUTE_STATUSES];
+  const shuffle = makeRandom(20240601 + block * 104_729);
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(shuffle() * (index + 1));
+    [values[index], values[swap]] = [values[swap], values[index]];
+  }
+  disputeStatusBlocks.set(block, values);
+  return values;
+}
+
+function disputeStatus(position: number): string {
+  const size = DISPUTE_STATUSES.length;
+  return disputeStatusBlock(Math.floor(position / size))[position % size];
+}
+
+// Assigns each dispute the status its position in the default sort order maps
+// to, so a rerun converges on the same distribution instead of leaving values
+// from an earlier seed behind.
+async function reconcileDisputeStatuses() {
+  const disputes = await prisma.dispute.findMany({
+    orderBy: [{ openedAt: "asc" }, { id: "asc" }],
+    select: { id: true, status: true },
+  });
+
+  const stale = new Map<string, string[]>();
+  for (const [position, dispute] of disputes.entries()) {
+    const status = disputeStatus(position);
+    if (dispute.status === status) continue;
+    stale.set(status, [...(stale.get(status) ?? []), dispute.id]);
+  }
+
+  let updated = 0;
+  for (const [status, ids] of stale) {
+    const result = await prisma.dispute.updateMany({
+      where: { id: { in: ids } },
+      data: { status },
+    });
+    updated += result.count;
+  }
+  return updated;
+}
+
+async function seedDisputes(target: number) {
+  const existing = await prisma.dispute.count();
+  const rows = [];
+  for (let index = existing; index < target; index += 1) {
+    const cardNetwork = CARD_NETWORKS[index % CARD_NETWORKS.length];
+    rows.push({
+      merchantName: MERCHANTS[(index * 5 + 3) % MERCHANTS.length],
+      cardNetwork,
+      amountPence: intBetween(1_200, 480_000),
+      reasonCode: pick(REASON_CODES[cardNetwork]),
+      // Placeholder: reconcileDisputeStatuses() below assigns the real value by
+      // the row's position in the default sort order, which insertion order
+      // does not follow.
+      status: "open",
+      openedAt: disputeOpenedAt(index),
+    });
+  }
+  if (rows.length > 0) await prisma.dispute.createMany({ data: rows });
+
+  return { created: rows.length, existing, updated: await reconcileDisputeStatuses() };
+}
+
+// Distinct to the second for every index, so the default openedAt ordering is
+// total and the status assignment above is stable across reruns.
+function disputeOpenedAt(index: number): Date {
+  return new Date(daysAgo(intBetween(0, 150), index).getTime() + index * 1_000);
+}
+
 async function seedFeatureFlags() {
   const keys = [
     "checkout.new-summary",
@@ -223,6 +331,7 @@ async function main() {
   const users = await seedUsers();
   const refunds = await seedRefunds(200);
   const kycCases = await seedKycCases(120);
+  const disputes = await seedDisputes(80);
   const flags = await seedFeatureFlags();
 
   console.log(
@@ -230,6 +339,7 @@ async function main() {
       `users upserted: ${users}`,
       `refunds created: ${refunds.created} (existing: ${refunds.existing})`,
       `kyc cases created: ${kycCases.created} (existing: ${kycCases.existing}, statuses reconciled: ${kycCases.updated})`,
+      `disputes created: ${disputes.created} (existing: ${disputes.existing}, statuses reconciled: ${disputes.updated})`,
       `feature flags upserted: ${flags}`,
     ].join("\n"),
   );
