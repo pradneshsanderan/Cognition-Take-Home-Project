@@ -48,7 +48,13 @@ const REFUND_STATUSES = ["approved", "rejected"] as const;
 const COUNTRIES = ["GB", "IE", "DE", "FR", "NG", "IN", "US", "SG"] as const;
 const RISK_LEVELS = ["low", "medium", "high"] as const;
 const DOCUMENT_TYPES = ["passport", "driving_licence", "national_id", "residence_permit"] as const;
-const KYC_STATUSES = ["pending", "approved", "rejected", "escalated"] as const;
+// Every value here is declared by apps/kyc.ts, and the 6/3/1 weighting below
+// keeps all three represented in the data.
+const KYC_STATUSES = [
+  "pending", "pending", "pending", "pending", "pending", "pending",
+  "cleared", "cleared", "cleared",
+  "escalated",
+] as const;
 const ENVIRONMENTS = ["dev", "staging", "prod"] as const;
 
 function personName(index: number): string {
@@ -105,10 +111,39 @@ async function seedRefunds(target: number) {
   return { created: rows.length, existing };
 }
 
+function kycStatus(index: number): string {
+  return KYC_STATUSES[index % KYC_STATUSES.length];
+}
+
+// Assigns each case the status its queue position implies, so a rerun on a
+// database seeded before the queue statuses existed converges on the same
+// distribution instead of leaving stale values behind.
+async function reconcileKycStatuses() {
+  const cases = await prisma.kycCase.findMany({
+    orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
+    select: { id: true, status: true },
+  });
+
+  const stale = new Map<string, string[]>();
+  for (const [index, kycCase] of cases.entries()) {
+    const status = kycStatus(index);
+    if (kycCase.status === status) continue;
+    stale.set(status, [...(stale.get(status) ?? []), kycCase.id]);
+  }
+
+  let updated = 0;
+  for (const [status, ids] of stale) {
+    const result = await prisma.kycCase.updateMany({
+      where: { id: { in: ids } },
+      data: { status },
+    });
+    updated += result.count;
+  }
+  return updated;
+}
+
 async function seedKycCases(target: number) {
   const existing = await prisma.kycCase.count();
-  if (existing >= target) return { created: 0, existing };
-
   const rows = [];
   for (let index = existing; index < target; index += 1) {
     rows.push({
@@ -116,12 +151,13 @@ async function seedKycCases(target: number) {
       country: COUNTRIES[index % COUNTRIES.length],
       riskLevel: pick(RISK_LEVELS),
       documentType: pick(DOCUMENT_TYPES),
-      status: random() < 0.5 ? "pending" : pick(KYC_STATUSES),
+      status: kycStatus(index),
       submittedAt: daysAgo(intBetween(0, 90), index),
     });
   }
-  await prisma.kycCase.createMany({ data: rows });
-  return { created: rows.length, existing };
+  if (rows.length > 0) await prisma.kycCase.createMany({ data: rows });
+
+  return { created: rows.length, existing, updated: await reconcileKycStatuses() };
 }
 
 async function seedFeatureFlags() {
@@ -172,7 +208,7 @@ async function main() {
     [
       `users upserted: ${users}`,
       `refunds created: ${refunds.created} (existing: ${refunds.existing})`,
-      `kyc cases created: ${kycCases.created} (existing: ${kycCases.existing})`,
+      `kyc cases created: ${kycCases.created} (existing: ${kycCases.existing}, statuses reconciled: ${kycCases.updated})`,
       `feature flags upserted: ${flags}`,
     ].join("\n"),
   );
