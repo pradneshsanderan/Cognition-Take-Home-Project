@@ -54,6 +54,16 @@ model KycCase {
   submittedAt   DateTime @default(now())
 }
 
+model Dispute {
+  id           String   @id @default(cuid())
+  merchantName String
+  cardNetwork  String
+  amountPence  Int
+  reasonCode   String
+  status       String   @default("open")
+  openedAt     DateTime @default(now())
+}
+
 model FeatureFlag {
   id          String   @id @default(cuid())
   key         String   @unique

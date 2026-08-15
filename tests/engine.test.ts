@@ -11,6 +11,7 @@
 // database-touching layers are exercised by using the app.
 
 import { describe, expect, it } from "vitest";
+import disputes from "@/apps/disputes";
 import flags from "@/apps/flags";
 import kyc from "@/apps/kyc";
 import refunds from "@/apps/refunds";
@@ -140,6 +141,10 @@ describe("permittedActions", () => {
     expect(names(kyc, ["support"])).toEqual([]);
     expect(names(flags, ["engineering"])).toEqual(["enable", "disable"]);
     expect(names(flags, ["compliance"])).toEqual([]);
+    expect(names(disputes, ["finance"])).toEqual(["submitEvidence", "acceptLiability"]);
+    // Compliance may view disputes but runs neither action.
+    expect(canView(actor("compliance"), disputes)).toBe(true);
+    expect(names(disputes, ["compliance"])).toEqual([]);
   });
 
   it("grants nothing to an unauthenticated actor", () => {
