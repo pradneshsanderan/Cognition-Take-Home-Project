@@ -1,10 +1,9 @@
 import { defineApp } from "@/lib/defineApp";
 
 export default defineApp({
-  name: "Example (Refunds)",
+  name: "Refunds Dashboard",
   resource: "refund",
   fields: [
-    { name: "id", label: "ID", type: "string", readOnly: true },
     { name: "customerName", label: "Customer", type: "string" },
     { name: "customerEmail", label: "Email", type: "string" },
     { name: "amountPence", label: "Amount", type: "money" },
@@ -18,8 +17,8 @@ export default defineApp({
     { name: "createdAt", label: "Created", type: "datetime", readOnly: true },
   ],
   list: {
-    columns: ["customerName", "customerEmail", "amountPence", "status", "createdAt"],
-    filters: ["status", "customerName"],
+    columns: ["customerName", "amountPence", "status", "createdAt"],
+    filters: ["status"],
     defaultSort: { field: "createdAt", dir: "desc" },
     pageSize: 25,
   },
@@ -31,9 +30,8 @@ export default defineApp({
   actions: [
     {
       name: "approve",
-      label: "Approve",
+      label: "Approve refund",
       effect: { set: { status: "approved" } },
-      confirm: "Approve this refund?",
     },
     {
       name: "reject",
