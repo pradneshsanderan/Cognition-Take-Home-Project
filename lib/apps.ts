@@ -18,7 +18,7 @@ const SCALAR_TYPES_BY_FIELD_TYPE: Record<Field["type"], string[]> = {
   datetime: ["DateTime"],
 };
 
-class AppConfigError extends Error {
+export class AppConfigError extends Error {
   constructor(slug: string, message: string) {
     super(`apps/${slug}.ts: ${message}`);
     this.name = "AppConfigError";
@@ -50,7 +50,7 @@ function lowerFirst(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
-function validate(slug: string, config: AppConfig): AppConfig {
+export function validateAppConfig(slug: string, config: AppConfig): AppConfig {
   const model = modelForResource(slug, config.resource);
   const modelFields = new Map(model.fields.map((field) => [field.name, field]));
   const configFields = new Map<string, Field>();
@@ -176,7 +176,7 @@ let cache: App[] | undefined;
 export function getApps(): App[] {
   if (!cache) {
     cache = Object.entries(appManifest)
-      .map(([slug, config]) => ({ slug, config: validate(slug, config) }))
+      .map(([slug, config]) => ({ slug, config: validateAppConfig(slug, config) }))
       .sort((a, b) => a.config.name.localeCompare(b.config.name));
   }
   return cache;
