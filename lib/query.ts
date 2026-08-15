@@ -22,7 +22,7 @@ function single(params: SearchParams, key: string): string {
   return (raw ?? "").trim();
 }
 
-function whereForFilter(field: Field, raw: string): Row | undefined {
+export function whereForFilter(field: Field, raw: string): Row | undefined {
   if (raw === "") return undefined;
   switch (field.type) {
     case "boolean":

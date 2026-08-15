@@ -1,28 +1,55 @@
 # Config-driven internal tools platform
 
-An internal tool here is a config file, not a codebase. One generic set of routes and
-components renders every app: adding a tool means adding exactly one file under `apps/`.
+An internal tool here is a config file, not a codebase: one generic set of routes and
+components renders every app, so adding a tool means adding exactly one file under `apps/`.
+Three worked examples ship with it — a refunds dashboard, a KYC review queue and a feature
+flag console — each of which is a single file with fields, columns, filters, roles and
+actions and no bespoke code. It was built to test whether a team could replace Microsoft
+Power Apps with tooling they own.
 
-## Getting started
+## Running it
+
+Prerequisites: Node 22 or newer (required — the app targets Next 16 and React 19), npm, and
+a Postgres connection string.
+
+Two environment variables. Put them in `.env` at the repository root:
+
+```bash
+DATABASE_URL="postgresql://user:password@host:6543/postgres?pgbouncer=true&connection_limit=1"
+DIRECT_URL="postgresql://user:password@host:5432/postgres"
+```
+
+`DATABASE_URL` is the pooled connection the app queries through; `DIRECT_URL` is a direct
+(unpooled) connection Prisma uses for migrations. With a plain single-node Postgres, set
+both to the same URL.
 
 ```bash
 npm install
-npx prisma migrate dev
-npx prisma db seed      # idempotent
-npm run dev
+npx prisma migrate deploy   # or: npx prisma migrate dev
+npx prisma db seed          # idempotent: 4 users, 200 refunds, 120 KYC cases, 15 flags
+npm run dev                 # http://localhost:3000
+npm test                    # unit tests
+npm run lint
+npm run build
 ```
 
-`DATABASE_URL` (Supabase transaction pooler, port 6543) and `DIRECT_URL` (session pooler,
-port 5432) must be present in the environment. See `.env.example` for the shape; never
-commit real values.
+There is no login. Pick a user from the dropdown in the header — `alice` (finance,
+support), `bob` (support), `carol` (engineering), `dave` (compliance) — and the nav, the
+action buttons and `/audit` change with the roles.
 
-## Adding an app
+### Deploying to Vercel
 
-Create `apps/<slug>.ts` default-exporting `defineApp({...})`. The filename is the route:
-`apps/refunds.ts` serves `/refunds`. Nothing else needs to change — the `predev` and
-`prebuild` hooks run `scripts/sync-apps.ts`, which regenerates `apps/_manifest.ts` with a
-static import per app file (static imports, not a runtime `readdirSync`, so the files are
-traced into the Vercel serverless bundle).
+Set `DATABASE_URL` and `DIRECT_URL` in the project's environment variables. Leave the build
+command as the repository's own `npm run build`, which runs `prisma generate` before
+`next build` — without it the deployed bundle has no Prisma client. Set the project's Node
+version to 22. Run `npx prisma migrate deploy` against the database once before the first
+deploy.
+
+## Adding a new app
+
+Create `apps/<slug>.ts`. That is the only file that needs creating: the filename is the
+route (`apps/refunds.ts` serves `/refunds`), and the `predev`/`prebuild` hooks run
+`scripts/sync-apps.ts` to regenerate `apps/_manifest.ts`. A complete minimal config:
 
 ```ts
 import { defineApp } from "@/lib/defineApp";
@@ -47,61 +74,68 @@ export default defineApp({
 });
 ```
 
-Every config is validated against the Prisma datamodel on first use: an unknown
-`resource`, an unknown field name, a field/column/filter type mismatch or an action that
-sets an impossible enum value throws an error naming the offending `apps/<slug>.ts` file
-instead of rendering an empty table. `permissions.view` is required, and granting a
-permission for an action the config does not declare is an error too.
+The model must already exist in `prisma/schema.prisma`. Every config is validated against
+the Prisma datamodel on first use, so an unknown resource, an unknown field, a field type
+that disagrees with the Prisma scalar or an action setting an impossible enum value throws
+an error naming the offending file instead of rendering an empty table.
+`apps/refunds.ts`, `apps/kyc.ts` and `apps/flags.ts` are the worked examples.
 
-## Access control
+## Architecture
 
-`permissions.view` lists the roles that may see the app at all; every other key names an
-action and lists the roles that may run it. Roles come from the `User` row of the current
-user (`finance`, `support`, `engineering`, `compliance` are seeded).
+Next App Router with Prisma on Postgres. `lib/apps.ts` loads the generated manifest and
+validates each config against the Prisma datamodel; `app/[app]/page.tsx` and
+`app/[app]/[id]/page.tsx` are the only list and detail routes and render whatever the
+config declares through generic components in `components/`. Reads go through
+`lib/query.ts`, which builds `where`/`orderBy` from the config and the URL query string, so
+views are shareable. Writes go through one choke point, `runAppAction()` in `lib/mutate.ts`,
+reached only by `POST /api/[app]/[id]/[action]`: it resolves the actor, checks the
+permission and appends the audit row in the same transaction as the change, so no route can
+forget any of the three. An eslint rule rejects Prisma writes anywhere else.
 
-An app the current user may not view is absent from the home page and the header nav, and
-requesting its route directly returns a real `403` (`forbidden()` → `app/forbidden.tsx`),
-not a redirect. Action buttons render only for permitted roles — a courtesy, since the
-server re-checks on every request.
+In the engine: route and component rendering per field type, role checks derived from
+`config.permissions`, the audited write path and the `/audit` view, formatting, filtering,
+pagination, config validation, identity resolution.
 
-All writes go through one choke point, `runAppAction()` in `lib/mutate.ts`. It resolves the
-identity, checks the permission and appends the audit entry in the same transaction as the
-change, so a route cannot forget any of the three: `lib/query.ts` exposes no write path at
-all, and eslint rejects `prisma.<model>.update|create|delete` outside `lib/mutate.ts`.
-`POST /api/[app]/[id]/[action]` is the only mutation route; it maps the choke point's
-result to `403`, `404` or `400` and otherwise redirects back to the record.
+In a config: fields and their types, list columns, which fields are filterable, sort order
+and page size, the roles that may view, the actions and what they set, and the roles that
+may run each one.
 
-### Dev identity
+## What this deliberately does not do
 
-There is no login. The header dropdown names one of the seeded users in the
-`dev_user_email` cookie, and `currentActor()` in `lib/identity.ts` — the single point where
-identity is resolved — loads that `User` row. In production only that function changes (an
-OIDC provider's verified session instead of a cookie); nothing downstream of it changes.
+**No real authentication.** A dev user switcher writes a `dev_user_email` cookie and
+`currentActor()` in `lib/identity.ts` trusts it. Anyone can be anyone. Production replaces
+that one function with an OIDC session lookup; nothing downstream of it — permissions,
+audit, the choke point — knows where the identity came from, so nothing downstream changes.
 
-### Audit log
+**No maker-checker.** `Action.makerChecker` exists in the type in `lib/defineApp.ts` and is
+validated (the field it names must exist and be numeric), but no code path reads it. There
+is no dual-approval behaviour: an action with `makerChecker` declared applies immediately,
+exactly like one without. It was scoped as a stretch goal and cut when session 2 ran long.
 
-Every attempt to run an action appends an `AuditLog` row: actor, app, resource, record,
-action, outcome (`applied` or `denied`) and the before/after record. It is append only —
-nothing in the codebase updates or deletes a row, and an eslint rule rejects any update or
-delete call on the `auditLog` model anywhere. `/audit` renders the log newest first,
-filterable by app and actor, and is visible only to the `compliance` role.
+**Config and data can drift, and the engine hides it.** If a config declares an enum option
+no row holds, filtering on it returns nothing. If a row holds a value the config does not
+declare, that value is unreachable as a filter, and worse: `whereForFilter` in
+`lib/query.ts` drops an out-of-options enum value entirely, so the condition disappears and
+the view returns every row rather than none. Out-of-range enum filtering silently becomes a
+no-op instead of surfacing the mismatch. Nothing checks that the options in a config match
+the values in the table. This was found by exercising the app, not by reading it.
 
-## Layout
+**No connectors, no workflows, no editing path.** There is no integration with any external
+system, no scheduled or event-driven workflows, no mobile client, no way for a non-engineer
+to create or change an app, and no multi-environment governance — no dev/staging/prod
+promotion of a config, no approval on a config change, no per-environment app versions.
 
-| Path | Purpose |
-| --- | --- |
-| `lib/defineApp.ts` | `AppConfig` types and the `defineApp()` identity function |
-| `lib/apps.ts` | manifest loading plus config validation against the Prisma datamodel |
-| `lib/query.ts` | generic list/detail read queries via `prisma[config.resource]` |
-| `lib/mutate.ts` | the single choke point: permission check + audited write in one transaction |
-| `lib/identity.ts` | dev identity resolution (cookie today, OIDC in production) |
-| `lib/permissions.ts` | role checks derived from `config.permissions` |
-| `lib/format.ts` | field-type formatting (money in pence → GBP, datetimes, booleans) |
-| `components/` | generic table, filters, pagination, detail and action components |
-| `app/[app]`, `app/[app]/[id]` | list and detail routes for every app |
-| `app/api/[app]/[id]/[action]` | the only mutation route |
-| `app/audit` | read-only audit log, `compliance` only |
-| `scripts/sync-apps.ts` | generates `apps/_manifest.ts` |
+**The escape hatch problem.** Some app will need something a config cannot express — a
+chart, a multi-step form, a bulk edit, a screen that joins two resources — and the engine
+has no route into custom React for one screen. The choices are to widen the config format
+until it is a programming language, or to drop out of the platform and write the tool by
+hand. Every low-code platform has this cliff; owning the engine only means you choose where
+it sits.
 
-Filter values and the page number live in the URL query string, so views are shareable and
-browser back/forward work.
+## Tests
+
+`npm test` runs Vitest. The tests are pure unit tests over the load-bearing logic — config
+validation, `canView`/`canRunAction`/`permittedActions`, and `whereForFilter` — and touch
+no database. That is forced by the audit design: actions are audited in the same
+transaction as the change and the log is append only, so an integration test running an
+action would permanently add rows to the `/audit` compliance view.
