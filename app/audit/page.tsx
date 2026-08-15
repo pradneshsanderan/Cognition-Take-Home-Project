@@ -45,6 +45,9 @@ export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
       </p>
 
       <form
+        // Keyed on the active filters so React remounts the uncontrolled
+        // selects instead of keeping stale ones across a soft navigation.
+        key={`app=${app}&actor=${actorId}`}
         method="get"
         action="/audit"
         className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-white p-4"
