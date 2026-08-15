@@ -111,11 +111,32 @@ async function seedRefunds(target: number) {
   return { created: rows.length, existing };
 }
 
-function kycStatus(index: number): string {
-  return KYC_STATUSES[index % KYC_STATUSES.length];
+// Each block of ten consecutive cases gets its own shuffle of KYC_STATUSES,
+// seeded by the block index. Permuting rather than resampling keeps six pending,
+// three cleared and one escalated in every block — so the totals are exact — while
+// the column still reads as unordered instead of as a repeating run.
+const kycStatusBlocks = new Map<number, readonly string[]>();
+
+function kycStatusBlock(block: number): readonly string[] {
+  const cached = kycStatusBlocks.get(block);
+  if (cached) return cached;
+
+  const values = [...KYC_STATUSES];
+  const shuffle = makeRandom(20240601 + block * 7919);
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(shuffle() * (index + 1));
+    [values[index], values[swap]] = [values[swap], values[index]];
+  }
+  kycStatusBlocks.set(block, values);
+  return values;
 }
 
-// Assigns each case the status its queue position implies, so a rerun on a
+function kycStatus(index: number): string {
+  const size = KYC_STATUSES.length;
+  return kycStatusBlock(Math.floor(index / size))[index % size];
+}
+
+// Assigns each case the status its queue position maps to, so a rerun on a
 // database seeded before the queue statuses existed converges on the same
 // distribution instead of leaving stale values behind.
 async function reconcileKycStatuses() {
