@@ -15,6 +15,25 @@ model User {
   roles String[]
 }
 
+// Append only. Rows are written by lib/mutate.ts inside the same transaction as
+// the change they record; nothing in this codebase updates or deletes them.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actorEmail String
+  app        String
+  resource   String
+  recordId   String
+  action     String
+  outcome    String
+  before     Json
+  after      Json
+  createdAt  DateTime @default(now())
+
+  @@index([app, createdAt])
+  @@index([actorId, createdAt])
+}
+
 model Refund {
   id            String   @id @default(cuid())
   customerName  String

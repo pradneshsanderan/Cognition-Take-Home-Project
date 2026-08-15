@@ -3,7 +3,9 @@
 import type { AppConfig } from "@/lib/defineApp";
 
 import app___example from "./__example";
+import app_feature_flags from "./feature-flags";
 
 export const appManifest: Record<string, AppConfig> = {
   "__example": app___example,
+  "feature-flags": app_feature_flags,
 };

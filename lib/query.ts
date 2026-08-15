@@ -1,5 +1,6 @@
+// Read side only. Writes live behind the single choke point in lib/mutate.ts.
 import type { AppConfig, Field } from "@/lib/defineApp";
-import { pageSizeOf } from "@/lib/registry";
+import { pageSizeOf } from "@/lib/apps";
 import { prisma } from "@/lib/prisma";
 
 export type Row = Record<string, unknown>;
@@ -53,7 +54,6 @@ function delegate(resource: string) {
       findMany: (args: unknown) => Promise<Row[]>;
       count: (args: unknown) => Promise<number>;
       findUnique: (args: unknown) => Promise<Row | null>;
-      update: (args: unknown) => Promise<Row>;
     }
   >;
   return client[resource];
@@ -101,12 +101,4 @@ export async function fetchList(
 
 export function fetchRecord(config: AppConfig, id: string): Promise<Row | null> {
   return delegate(config.resource).findUnique({ where: { id } });
-}
-
-export function applyEffect(
-  config: AppConfig,
-  id: string,
-  set: Record<string, string | number | boolean>,
-): Promise<Row> {
-  return delegate(config.resource).update({ where: { id }, data: set });
 }
